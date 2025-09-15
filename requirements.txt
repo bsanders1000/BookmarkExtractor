@@ -1,0 +1,5 @@
+PyQt5>=5.15.0
+cryptography>=3.4.0
+google-generativeai>=0.7.0
+requests>=2.25.0
+beautifulsoup4>=4.9.0

@@ -5,8 +5,13 @@ Browser detection functionality
 import os
 import sys
 import logging
-import winreg
 from pathlib import Path
+
+# Import winreg only on Windows
+if sys.platform == 'win32':
+    import winreg
+else:
+    winreg = None
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -187,6 +192,8 @@ def _detect_browsers_linux() -> List[BrowserInfo]:
 
 def _get_windows_app_path(exe_name: str) -> Optional[Path]:
     """Get application path from Windows registry"""
+    if winreg is None:
+        return None
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\\" + exe_name) as key:
             path, _ = winreg.QueryValueEx(key, "")

@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyCharm
+.idea/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Local data
+*.log
+bookmark_aggregator.log
+credentials.enc
+credentials.salt
+bookmarks_processed.json
+page_content_cache.json
+
+# OS
+.DS_Store
+Thumbs.db
