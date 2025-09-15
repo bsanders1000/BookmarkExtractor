@@ -1,0 +1,1 @@
+"""GUI package for Browser Bookmark Aggregator"""

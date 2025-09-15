@@ -46,7 +46,9 @@ class AnalyzerRegistry:
             
             # For Gemini analyzer, check API key availability
             if hasattr(instance, '_get_api_key'):
-                api_key = instance._get_api_key(config or {}, None)
+                # Get analyzer-specific config
+                analyzer_config = (config or {}).get(name, {})
+                api_key = instance._get_api_key(analyzer_config, None)
                 return bool(api_key)
                 
             return True
