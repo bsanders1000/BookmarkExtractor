@@ -1,5 +1,4 @@
 import sys
-import os
 import logging
 import webbrowser
 import threading
@@ -393,8 +392,8 @@ class MainWindow(QMainWindow):
                         QTimer.singleShot(0, lambda: self._close_progress_dialog())
                         
                 except Exception as e:
-                    logger.error(f"Error during bookmark extraction: {e}")
-                    QTimer.singleShot(0, lambda: self._show_extraction_error(str(e)))
+                    logger.exception(f"Error during bookmark extraction: {e}")
+                    QTimer.singleShot(0, lambda err=str(e): self._show_extraction_error(err))
             
             threading.Thread(target=extraction_thread, daemon=True).start()
             
@@ -418,6 +417,40 @@ class MainWindow(QMainWindow):
         """Show extraction error from main thread"""
         self._close_progress_dialog()
         QMessageBox.critical(self, "Extraction Error", f"Failed to extract bookmarks: {error_message}")
+    
+    def _apply_recategorization_results(self, new_categorized):
+        """Apply recategorization results on main thread"""
+        try:
+            self.categorized_bookmarks = new_categorized
+            self.populate_category_tree()
+            if self.current_category and self.current_category in self.categorized_bookmarks:
+                self.populate_bookmark_list(self.current_category)
+            self.status_bar.showMessage("Recategorization complete.")
+        except Exception as e:
+            logger.exception(f"Error applying recategorization results: {e}")
+            self.status_bar.showMessage("Error applying recategorization results")
+    
+    def _apply_import_results(self, imported_categorized, imported_bookmarks, file_path):
+        """Apply import results and update UI on main thread"""
+        try:
+            for category, bookmarks in imported_categorized.items():
+                self.categorized_bookmarks.setdefault(category, []).extend(bookmarks)
+            self.storage.bookmarks.extend(imported_bookmarks)
+            self.storage.save()
+            self.populate_category_tree()
+            if self.current_category:
+                self.populate_bookmark_list(self.current_category)
+            # Refresh keyword browser
+            if hasattr(self, 'keyword_browser'):
+                self.keyword_browser.bookmarks = self.storage.get_all()
+                self.keyword_browser.keyword_to_bookmarks = self.keyword_browser._compute_keyword_map()
+                self.keyword_browser.keyword_list.clear()
+                self.keyword_browser._populate_keywords()
+            success_msg = f"Imported {len(imported_bookmarks)} bookmarks successfully from {file_path}"
+            self.status_bar.showMessage(success_msg)
+        except Exception as e:
+            logger.exception(f"Error applying import results: {e}")
+            self.status_bar.showMessage("Error applying import results")
     
     def _finish_extraction(self, categorized_bookmarks, all_bookmarks):
         """Finish extraction process and update UI from main thread"""
@@ -506,13 +539,21 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Validating link: {bookmark.url}...")
 
         def validate_thread():
-            from link_validator import _validate_link
-            is_valid = _validate_link(bookmark)
-            bookmark.is_valid = is_valid
-            item.setForeground(QColor("black" if is_valid else "red"))
-            self.status_bar.showMessage(
-                f"Link validation complete: {'Valid' if is_valid else 'Invalid'} - {bookmark.url}"
-            )
+            try:
+                from link_validator import _validate_link
+                is_valid = _validate_link(bookmark)
+                bookmark.is_valid = is_valid
+                
+                # Route UI updates to main thread
+                QTimer.singleShot(0, lambda: item.setForeground(QColor("black" if is_valid else "red")))
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(
+                    f"Link validation complete: {'Valid' if is_valid else 'Invalid'} - {bookmark.url}"
+                ))
+            except Exception as e:
+                logger.exception(f"Error validating bookmark {bookmark.url}: {e}")
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(
+                    f"Error validating link: {bookmark.url}"
+                ))
 
         threading.Thread(target=validate_thread, daemon=True).start()
 
@@ -538,24 +579,33 @@ class MainWindow(QMainWindow):
                 items_map[bookmark] = item
 
         def validate_thread():
-            from link_validator import _validate_link
-            valid_count = 0
-            invalid_count = 0
-            for i, bookmark in enumerate(bookmarks_to_validate):
-                is_valid = _validate_link(bookmark)
-                bookmark.is_valid = is_valid
-                if is_valid:
-                    valid_count += 1
-                else:
-                    invalid_count += 1
-                self.status_bar.showMessage(
-                    f"Validating links... {i + 1}/{len(bookmarks_to_validate)} complete"
-                )
-                item = items_map[bookmark]
-                item.setForeground(QColor("black" if is_valid else "red"))
-            self.status_bar.showMessage(
-                f"Link validation complete. {valid_count} valid, {invalid_count} invalid links."
-            )
+            try:
+                from link_validator import _validate_link
+                valid_count = 0
+                invalid_count = 0
+                for i, bookmark in enumerate(bookmarks_to_validate):
+                    is_valid = _validate_link(bookmark)
+                    bookmark.is_valid = is_valid
+                    if is_valid:
+                        valid_count += 1
+                    else:
+                        invalid_count += 1
+                    
+                    # Route status update to main thread
+                    progress_msg = f"Validating links... {i + 1}/{len(bookmarks_to_validate)} complete"
+                    QTimer.singleShot(0, lambda msg=progress_msg: self.status_bar.showMessage(msg))
+                    
+                    # Route item color update to main thread
+                    item = items_map[bookmark]
+                    color = QColor("black" if is_valid else "red")
+                    QTimer.singleShot(0, lambda i=item, c=color: i.setForeground(c))
+                
+                # Route final status message to main thread
+                final_msg = f"Link validation complete. {valid_count} valid, {invalid_count} invalid links."
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(final_msg))
+            except Exception as e:
+                logger.exception(f"Error during link validation: {e}")
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage("Error occurred during link validation"))
 
         threading.Thread(target=validate_thread, daemon=True).start()
 
@@ -573,18 +623,20 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Recategorizing bookmarks... Please wait.")
 
         def recategorize_thread():
-            all_bookmarks = []
-            for bookmarks in self.categorized_bookmarks.values():
-                all_bookmarks.extend(bookmarks)
-            for category in list(self.categorized_bookmarks.keys()):
-                self.categorized_bookmarks[category] = []
-            from bookmark_categorizer import categorize_bookmarks
-            new_categorized = categorize_bookmarks(all_bookmarks)
-            self.categorized_bookmarks = new_categorized
-            self.populate_category_tree()
-            if self.current_category and self.current_category in self.categorized_bookmarks:
-                self.populate_bookmark_list(self.current_category)
-            self.status_bar.showMessage("Recategorization complete.")
+            try:
+                all_bookmarks = []
+                for bookmarks in self.categorized_bookmarks.values():
+                    all_bookmarks.extend(bookmarks)
+                for category in list(self.categorized_bookmarks.keys()):
+                    self.categorized_bookmarks[category] = []
+                from bookmark_categorizer import categorize_bookmarks
+                new_categorized = categorize_bookmarks(all_bookmarks)
+                
+                # Route UI updates to main thread
+                QTimer.singleShot(0, lambda: self._apply_recategorization_results(new_categorized))
+            except Exception as e:
+                logger.exception(f"Error during recategorization: {e}")
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage("Error occurred during recategorization"))
 
         threading.Thread(target=recategorize_thread, daemon=True).start()
 
@@ -606,10 +658,15 @@ class MainWindow(QMainWindow):
                 for category, bookmarks in self.categorized_bookmarks.items():
                     all_bookmarks.extend(bookmarks)
                 export_bookmarks(all_bookmarks, file_path)
-                self.status_bar.showMessage(f"Bookmarks exported successfully to {file_path}")
+                
+                # Route status update to main thread
+                success_msg = f"Bookmarks exported successfully to {file_path}"
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(success_msg))
             except Exception as e:
-                self.status_bar.showMessage(f"Error exporting bookmarks: {e}")
-                logger.error(f"Error exporting bookmarks: {e}")
+                logger.exception(f"Error exporting bookmarks: {e}")
+                # Route error message to main thread
+                error_msg = f"Error exporting bookmarks: {e}"
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(error_msg))
 
         threading.Thread(target=export_thread, daemon=True).start()
 
@@ -630,24 +687,14 @@ class MainWindow(QMainWindow):
                 imported_bookmarks = import_bookmarks(file_path)
                 from bookmark_categorizer import categorize_bookmarks
                 imported_categorized = categorize_bookmarks(imported_bookmarks)
-                for category, bookmarks in imported_categorized.items():
-                    self.categorized_bookmarks.setdefault(category, []).extend(bookmarks)
-                self.storage.bookmarks.extend(imported_bookmarks)
-                self.storage.save()
-                self.populate_category_tree()
-                if self.current_category:
-                    self.populate_bookmark_list(self.current_category)
-                # Refresh keyword browser
-                self.keyword_browser.bookmarks = self.storage.get_all()
-                self.keyword_browser.keyword_to_bookmarks = self.keyword_browser._compute_keyword_map()
-                self.keyword_browser.keyword_list.clear()
-                self.keyword_browser._populate_keywords()
-                self.status_bar.showMessage(
-                    f"Imported {len(imported_bookmarks)} bookmarks successfully from {file_path}"
-                )
+                
+                # Route UI updates to main thread
+                QTimer.singleShot(0, lambda: self._apply_import_results(imported_categorized, imported_bookmarks, file_path))
             except Exception as e:
-                self.status_bar.showMessage(f"Error importing bookmarks: {e}")
-                logger.error(f"Error importing bookmarks: {e}")
+                logger.exception(f"Error importing bookmarks: {e}")
+                # Route error message to main thread
+                error_msg = f"Error importing bookmarks: {e}"
+                QTimer.singleShot(0, lambda: self.status_bar.showMessage(error_msg))
 
         threading.Thread(target=import_thread, daemon=True).start()
 
