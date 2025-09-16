@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QDialog, QFormLayout, QComboBox, QSplitter, QStatusBar, QFileDialog, QTabWidget,
     QProgressDialog, QInputDialog
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor
 
 from bookmark_extractor import Bookmark, extract_bookmarks
@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     """Main application window"""
+    
+    # Class-level signals for thread-safe communication
+    progressSig = pyqtSignal(int, str)  # progress value and message
+    statusSig = pyqtSignal(str)  # status bar messages
+    extractionDoneSig = pyqtSignal(object, object)  # (categorized_bookmarks: dict, all_bookmarks: list)
+    extractionErrSig = pyqtSignal(str)  # error message
+    itemColorSig = pyqtSignal(object, object)  # (QListWidgetItem, QColor)
+    validateProgressSig = pyqtSignal(int, int)  # (current, total)
+    recategorizeDoneSig = pyqtSignal(object)  # (categorized_bookmarks: dict)
 
     def __init__(self, categorized_bookmarks: Dict[str, List[Bookmark]], cred_manager: CredentialManager):
         super().__init__()
@@ -181,6 +190,18 @@ class MainWindow(QMainWindow):
         analyzer_settings_action = QAction("Analyzer Settings…", self)
         analyzer_settings_action.triggered.connect(self.show_analyzer_settings_dialog)
         settings_menu.addAction(analyzer_settings_action)
+        
+        # Threading safety: Initialize cancellation flag
+        self._cancel_extraction = False
+        
+        # Connect signals to slots for thread-safe GUI updates
+        self.progressSig.connect(self._on_progress)
+        self.statusSig.connect(self.status_bar.showMessage)
+        self.extractionDoneSig.connect(self._finish_extraction)
+        self.extractionErrSig.connect(self._show_extraction_error)
+        self.itemColorSig.connect(self._on_item_color)
+        self.validateProgressSig.connect(self._on_validate_progress)
+        self.recategorizeDoneSig.connect(self._on_recategorize_done)
 
     # ------------------------- Category / Bookmarks UI -------------------------
 
@@ -356,12 +377,17 @@ class MainWindow(QMainWindow):
                     self.cred_manager.store_credentials(browser.id, username, password)
             
             # Step 4: Show progress dialog and extract in background thread
-            self.progress_dialog = QProgressDialog("Extracting bookmarks...", "Cancel", 0, len(installed_browsers), self)
+            # Set progress range to len(installed_browsers)+1 for categorization step
+            self.progress_dialog = QProgressDialog("Extracting bookmarks...", "Cancel", 0, len(installed_browsers) + 1, self)
             self.progress_dialog.setWindowTitle("Extracting Bookmarks")
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setAutoClose(False)
             self.progress_dialog.setAutoReset(False)
             self.progress_dialog.setMinimumDuration(0)
+            
+            # Connect cancel signal to thread-safe flag
+            self._cancel_extraction = False
+            self.progress_dialog.canceled.connect(lambda: setattr(self, '_cancel_extraction', True))
             self.progress_dialog.show()
             
             # Extract bookmarks in background thread
@@ -369,45 +395,41 @@ class MainWindow(QMainWindow):
                 all_bookmarks = []
                 try:
                     for i, browser in enumerate(installed_browsers):
-                        if self.progress_dialog.wasCanceled():
+                        if self._cancel_extraction:
                             break
                         
-                        QTimer.singleShot(0, lambda b=browser, idx=i: self._update_extraction_progress(idx, f"Extracting from {b.name}..."))
+                        # Emit progress signal instead of QTimer.singleShot
+                        self.progressSig.emit(i, f"Extracting from {browser.name}...")
                         
                         logger.info(f"Extracting bookmarks from {browser.name} {browser.version}")
                         credentials = self.cred_manager.get_credentials(browser.id) if browser.requires_credentials else None
                         bookmarks = extract_bookmarks(browser, credentials)
                         all_bookmarks.extend(bookmarks)
                         
-                        QTimer.singleShot(0, lambda idx=i+1: self._update_extraction_progress(idx, f"Extracted {len(all_bookmarks)} bookmarks..."))
+                        # Emit progress update
+                        self.progressSig.emit(i + 1, f"Extracted {len(all_bookmarks)} bookmarks...")
                     
-                    if not self.progress_dialog.wasCanceled() and all_bookmarks:
+                    if not self._cancel_extraction and all_bookmarks:
                         # Step 5: Categorize bookmarks
-                        QTimer.singleShot(0, lambda: self._update_extraction_progress(len(installed_browsers), "Categorizing bookmarks..."))
+                        self.progressSig.emit(len(installed_browsers), "Categorizing bookmarks...")
                         logger.info("Categorizing bookmarks...")
                         categorized_bookmarks = categorize_bookmarks(all_bookmarks)
                         
-                        # Step 6: Update storage and UI on main thread
-                        QTimer.singleShot(0, lambda: self._finish_extraction(categorized_bookmarks, all_bookmarks))
+                        # Step 6: Update storage and UI via signal
+                        self.extractionDoneSig.emit(categorized_bookmarks, all_bookmarks)
                     else:
-                        QTimer.singleShot(0, lambda: self._close_progress_dialog())
+                        # Close progress dialog via slot
+                        self.progressSig.emit(len(installed_browsers) + 1, "Extraction cancelled" if self._cancel_extraction else "No bookmarks found")
                         
                 except Exception as e:
                     logger.error(f"Error during bookmark extraction: {e}")
-                    QTimer.singleShot(0, lambda: self._show_extraction_error(str(e)))
+                    self.extractionErrSig.emit(str(e))
             
             threading.Thread(target=extraction_thread, daemon=True).start()
             
         except Exception as e:
             logger.error(f"Error in extract_bookmarks_from_browsers: {e}")
             QMessageBox.critical(self, "Error", f"Failed to extract bookmarks: {e}")
-    
-    def _update_extraction_progress(self, value, message):
-        """Update progress dialog from main thread"""
-        if hasattr(self, 'progress_dialog') and self.progress_dialog:
-            self.progress_dialog.setValue(value)
-            self.progress_dialog.setLabelText(message)
-            self.status_bar.showMessage(message)
     
     def _close_progress_dialog(self):
         """Close progress dialog from main thread"""
@@ -418,6 +440,38 @@ class MainWindow(QMainWindow):
         """Show extraction error from main thread"""
         self._close_progress_dialog()
         QMessageBox.critical(self, "Extraction Error", f"Failed to extract bookmarks: {error_message}")
+    
+    
+    # ------------------------- Thread-safe slot methods -------------------------
+    
+    def _on_progress(self, value, message):
+        """Update progress dialog and status bar from main thread"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.setValue(value)
+            self.progress_dialog.setLabelText(message)
+        self.status_bar.showMessage(message)
+    
+    def _on_item_color(self, item, color):
+        """Set item color from main thread"""
+        if item:
+            item.setForeground(color)
+    
+    def _on_validate_progress(self, current, total):
+        """Update status bar with validation progress"""
+        self.status_bar.showMessage(f"Validating links... {current}/{total} complete")
+    
+    def _on_recategorize_done(self, categorized_bookmarks):
+        """Apply re-categorized bookmarks and refresh UI"""
+        try:
+            self.categorized_bookmarks = categorized_bookmarks
+            self.populate_category_tree()
+            if self.current_category and self.current_category in self.categorized_bookmarks:
+                self.populate_bookmark_list(self.current_category)
+            self.status_bar.showMessage("Recategorization complete.")
+        except Exception as e:
+            logger.error(f"Error applying recategorization: {e}")
+            self.status_bar.showMessage(f"Error applying recategorization: {e}")
+    
     
     def _finish_extraction(self, categorized_bookmarks, all_bookmarks):
         """Finish extraction process and update UI from main thread"""
@@ -509,10 +563,11 @@ class MainWindow(QMainWindow):
             from link_validator import _validate_link
             is_valid = _validate_link(bookmark)
             bookmark.is_valid = is_valid
-            item.setForeground(QColor("black" if is_valid else "red"))
-            self.status_bar.showMessage(
-                f"Link validation complete: {'Valid' if is_valid else 'Invalid'} - {bookmark.url}"
-            )
+            # Use signal for thread-safe color update
+            color = QColor("black" if is_valid else "red")
+            self.itemColorSig.emit(item, color)
+            message = f"Link validation complete: {'Valid' if is_valid else 'Invalid'} - {bookmark.url}"
+            self.statusSig.emit(message)
 
         threading.Thread(target=validate_thread, daemon=True).start()
 
@@ -541,6 +596,8 @@ class MainWindow(QMainWindow):
             from link_validator import _validate_link
             valid_count = 0
             invalid_count = 0
+            total = len(bookmarks_to_validate)
+            
             for i, bookmark in enumerate(bookmarks_to_validate):
                 is_valid = _validate_link(bookmark)
                 bookmark.is_valid = is_valid
@@ -548,14 +605,16 @@ class MainWindow(QMainWindow):
                     valid_count += 1
                 else:
                     invalid_count += 1
-                self.status_bar.showMessage(
-                    f"Validating links... {i + 1}/{len(bookmarks_to_validate)} complete"
-                )
+                
+                # Use signals for thread-safe UI updates
+                self.validateProgressSig.emit(i + 1, total)
                 item = items_map[bookmark]
-                item.setForeground(QColor("black" if is_valid else "red"))
-            self.status_bar.showMessage(
-                f"Link validation complete. {valid_count} valid, {invalid_count} invalid links."
-            )
+                color = QColor("black" if is_valid else "red")
+                self.itemColorSig.emit(item, color)
+            
+            # Final status message
+            final_message = f"Link validation complete. {valid_count} valid, {invalid_count} invalid links."
+            self.statusSig.emit(final_message)
 
         threading.Thread(target=validate_thread, daemon=True).start()
 
@@ -573,18 +632,24 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Recategorizing bookmarks... Please wait.")
 
         def recategorize_thread():
-            all_bookmarks = []
-            for bookmarks in self.categorized_bookmarks.values():
-                all_bookmarks.extend(bookmarks)
-            for category in list(self.categorized_bookmarks.keys()):
-                self.categorized_bookmarks[category] = []
-            from bookmark_categorizer import categorize_bookmarks
-            new_categorized = categorize_bookmarks(all_bookmarks)
-            self.categorized_bookmarks = new_categorized
-            self.populate_category_tree()
-            if self.current_category and self.current_category in self.categorized_bookmarks:
-                self.populate_bookmark_list(self.current_category)
-            self.status_bar.showMessage("Recategorization complete.")
+            try:
+                all_bookmarks = []
+                for bookmarks in self.categorized_bookmarks.values():
+                    all_bookmarks.extend(bookmarks)
+                
+                # Clear existing categories
+                for category in list(self.categorized_bookmarks.keys()):
+                    self.categorized_bookmarks[category] = []
+                
+                from bookmark_categorizer import categorize_bookmarks
+                new_categorized = categorize_bookmarks(all_bookmarks)
+                
+                # Use signal to apply changes on GUI thread
+                self.recategorizeDoneSig.emit(new_categorized)
+                
+            except Exception as e:
+                logger.error(f"Error during recategorization: {e}")
+                self.statusSig.emit(f"Error during recategorization: {e}")
 
         threading.Thread(target=recategorize_thread, daemon=True).start()
 
