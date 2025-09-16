@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     """Main application window"""
 
-    def __init__(self, categorized_bookmarks: Dict[str, List[Bookmark]], cred_manager: CredentialManager):
+    def __init__(self, categorized_bookmarks: Dict[str, List[Bookmark]], 
+                 cred_manager: CredentialManager):
         super().__init__()
 
         self.settings_manager = SettingsManager()
@@ -48,7 +49,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 600)
 
         # Bookmark storage
-        self.storage = BookmarkStorage(Path.home() / ".bookmark_aggregator" / "bookmarks_processed.json")
+        storage_path = Path.home() / ".bookmark_aggregator" / "bookmarks_processed.json"
+        self.storage = BookmarkStorage(storage_path)
         self.storage.load()
         # On first run, sync extracted bookmarks into storage
         if not self.storage.bookmarks:
@@ -270,9 +272,12 @@ class MainWindow(QMainWindow):
             )
             item.setHidden(not match)
         visible_count = sum(
-            1 for i in range(self.bookmark_list.count()) if not self.bookmark_list.item(i).isHidden()
+            1 for i in range(self.bookmark_list.count()) 
+            if not self.bookmark_list.item(i).isHidden()
         )
-        self.status_bar.showMessage(f"Showing {visible_count} of {self.bookmark_list.count()} bookmarks")
+        self.status_bar.showMessage(
+            f"Showing {visible_count} of {self.bookmark_list.count()} bookmarks"
+        )
 
     def open_bookmark(self, item):
         bookmark = item.data(Qt.UserRole)
@@ -310,52 +315,57 @@ class MainWindow(QMainWindow):
             # Step 1: Get master password for credential manager
             if not self.cred_manager.initialized:
                 master_password, ok = QInputDialog.getText(
-                    self, 
-                    "Master Password", 
-                    "Enter master password (or press OK to create one):", 
+                    self,
+                    "Master Password",
+                    "Enter master password (or press OK to create one):",
                     QLineEdit.Password
                 )
                 if not ok:
                     return
-                
+
                 if not self.cred_manager.initialize(master_password):
-                    QMessageBox.critical(self, "Error", "Failed to initialize credential manager.")
+                    QMessageBox.critical(self, "Error", 
+                                       "Failed to initialize credential manager.")
                     return
             
             # Step 2: Detect installed browsers
             self.status_bar.showMessage("Detecting installed browsers...")
             installed_browsers = detect_browsers()
-            
+
             if not installed_browsers:
-                QMessageBox.information(self, "No Browsers", "No supported browsers found on this system.")
+                QMessageBox.information(self, "No Browsers", 
+                                      "No supported browsers found on this system.")
                 return
-            
+
             logger.info(f"Found {len(installed_browsers)} browser installations")
             
             # Step 3: Prompt for missing credentials
             for browser in installed_browsers:
-                if browser.requires_credentials and not self.cred_manager.has_credentials(browser.id):
+                if (browser.requires_credentials and 
+                    not self.cred_manager.has_credentials(browser.id)):
                     username, ok = QInputDialog.getText(
-                        self, 
-                        f"Browser Credentials", 
+                        self,
+                        "Browser Credentials",
                         f"Enter username for {browser.name}:"
                     )
                     if not ok:
                         continue
-                    
+
                     password, ok = QInputDialog.getText(
-                        self, 
-                        f"Browser Credentials", 
-                        f"Enter password for {browser.name}:", 
+                        self,
+                        "Browser Credentials",
+                        f"Enter password for {browser.name}:",
                         QLineEdit.Password
                     )
                     if not ok:
                         continue
-                    
+
                     self.cred_manager.store_credentials(browser.id, username, password)
             
             # Step 4: Show progress dialog and extract in background thread
-            self.progress_dialog = QProgressDialog("Extracting bookmarks...", "Cancel", 0, len(installed_browsers), self)
+            progress_range = len(installed_browsers)
+            self.progress_dialog = QProgressDialog("Extracting bookmarks...", "Cancel", 
+                                                  0, progress_range, self)
             self.progress_dialog.setWindowTitle("Extracting Bookmarks")
             self.progress_dialog.setWindowModality(Qt.WindowModal)
             self.progress_dialog.setAutoClose(False)
@@ -370,24 +380,43 @@ class MainWindow(QMainWindow):
                     for i, browser in enumerate(installed_browsers):
                         if self.progress_dialog.wasCanceled():
                             break
-                        
-                        QTimer.singleShot(0, lambda b=browser, idx=i: self._update_extraction_progress(idx, f"Extracting from {b.name}..."))
-                        
+
+                        QTimer.singleShot(
+                            0, 
+                            lambda b=browser, idx=i: self._update_extraction_progress(
+                                idx, f"Extracting from {b.name}..."
+                            )
+                        )
+
                         logger.info(f"Extracting bookmarks from {browser.name} {browser.version}")
-                        credentials = self.cred_manager.get_credentials(browser.id) if browser.requires_credentials else None
+                        credentials = (self.cred_manager.get_credentials(browser.id) 
+                                     if browser.requires_credentials else None)
                         bookmarks = extract_bookmarks(browser, credentials)
                         all_bookmarks.extend(bookmarks)
-                        
-                        QTimer.singleShot(0, lambda idx=i+1: self._update_extraction_progress(idx, f"Extracted {len(all_bookmarks)} bookmarks..."))
+
+                        QTimer.singleShot(
+                            0, 
+                            lambda idx=i+1: self._update_extraction_progress(
+                                idx, f"Extracted {len(all_bookmarks)} bookmarks..."
+                            )
+                        )
                     
                     if not self.progress_dialog.wasCanceled() and all_bookmarks:
                         # Step 5: Categorize bookmarks
-                        QTimer.singleShot(0, lambda: self._update_extraction_progress(len(installed_browsers), "Categorizing bookmarks..."))
+                        QTimer.singleShot(
+                            0, 
+                            lambda: self._update_extraction_progress(
+                                len(installed_browsers), "Categorizing bookmarks..."
+                            )
+                        )
                         logger.info("Categorizing bookmarks...")
                         categorized_bookmarks = categorize_bookmarks(all_bookmarks)
-                        
+
                         # Step 6: Update storage and UI on main thread
-                        QTimer.singleShot(0, lambda: self._finish_extraction(categorized_bookmarks, all_bookmarks))
+                        QTimer.singleShot(
+                            0, 
+                            lambda: self._finish_extraction(categorized_bookmarks, all_bookmarks)
+                        )
                     else:
                         QTimer.singleShot(0, lambda: self._close_progress_dialog())
                         
@@ -416,7 +445,8 @@ class MainWindow(QMainWindow):
     def _show_extraction_error(self, error_message):
         """Show extraction error from main thread"""
         self._close_progress_dialog()
-        QMessageBox.critical(self, "Extraction Error", f"Failed to extract bookmarks: {error_message}")
+        QMessageBox.critical(self, "Extraction Error", 
+                           f"Failed to extract bookmarks: {error_message}")
     
     def _apply_recategorization_results(self, new_categorized):
         """Apply recategorization results on main thread"""
@@ -486,13 +516,18 @@ class MainWindow(QMainWindow):
             
             # Update status
             total_new = len(new_bookmarks)
-            total_bookmarks = sum(len(bookmarks) for bookmarks in self.categorized_bookmarks.values())
-            self.status_bar.showMessage(f"Extraction complete. Added {total_new} new bookmarks. Total: {total_bookmarks}")
-            
+            total_bookmarks = sum(len(bookmarks) 
+                                for bookmarks in self.categorized_bookmarks.values())
+            self.status_bar.showMessage(
+                f"Extraction complete. Added {total_new} new bookmarks. Total: {total_bookmarks}"
+            )
+
             if total_new > 0:
-                QMessageBox.information(self, "Extraction Complete", f"Successfully extracted {total_new} new bookmarks!")
+                QMessageBox.information(self, "Extraction Complete", 
+                                      f"Successfully extracted {total_new} new bookmarks!")
             else:
-                QMessageBox.information(self, "Extraction Complete", "No new bookmarks found (all bookmarks already exist).")
+                QMessageBox.information(self, "Extraction Complete", 
+                                      "No new bookmarks found (all bookmarks already exist).")
                 
         except Exception as e:
             logger.error(f"Error finishing extraction: {e}")
@@ -561,7 +596,8 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Validate Links",
-            "This will check all visible bookmarks for dead links. It may take some time. Continue?",
+            "This will check all visible bookmarks for dead links. " + 
+            "It may take some time. Continue?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -592,20 +628,26 @@ class MainWindow(QMainWindow):
                         invalid_count += 1
                     
                     # Route status update to main thread
-                    progress_msg = f"Validating links... {i + 1}/{len(bookmarks_to_validate)} complete"
-                    QTimer.singleShot(0, lambda msg=progress_msg: self.status_bar.showMessage(msg))
-                    
+                    progress_msg = (f"Validating links... " + 
+                                  f"{i + 1}/{len(bookmarks_to_validate)} complete")
+                    QTimer.singleShot(0, lambda msg=progress_msg: 
+                                    self.status_bar.showMessage(msg))
+
                     # Route item color update to main thread
                     item = items_map[bookmark]
                     color = QColor("black" if is_valid else "red")
                     QTimer.singleShot(0, lambda i=item, c=color: i.setForeground(c))
-                
+
                 # Route final status message to main thread
-                final_msg = f"Link validation complete. {valid_count} valid, {invalid_count} invalid links."
+                final_msg = (f"Link validation complete. {valid_count} valid, " + 
+                           f"{invalid_count} invalid links.")
                 QTimer.singleShot(0, lambda: self.status_bar.showMessage(final_msg))
             except Exception as e:
                 logger.exception(f"Error during link validation: {e}")
-                QTimer.singleShot(0, lambda: self.status_bar.showMessage("Error occurred during link validation"))
+                QTimer.singleShot(
+                    0, 
+                    lambda: self.status_bar.showMessage("Error occurred during link validation")
+                )
 
         threading.Thread(target=validate_thread, daemon=True).start()
 
@@ -613,7 +655,8 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Recategorize Bookmarks",
-            "This will recategorize all bookmarks. Any manual categorization will be lost. Continue?",
+            "This will recategorize all bookmarks. " + 
+            "Any manual categorization will be lost. Continue?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -633,10 +676,16 @@ class MainWindow(QMainWindow):
                 new_categorized = categorize_bookmarks(all_bookmarks)
                 
                 # Route UI updates to main thread
-                QTimer.singleShot(0, lambda: self._apply_recategorization_results(new_categorized))
+                QTimer.singleShot(
+                    0, 
+                    lambda: self._apply_recategorization_results(new_categorized)
+                )
             except Exception as e:
                 logger.exception(f"Error during recategorization: {e}")
-                QTimer.singleShot(0, lambda: self.status_bar.showMessage("Error occurred during recategorization"))
+                QTimer.singleShot(
+                    0, 
+                    lambda: self.status_bar.showMessage("Error occurred during recategorization")
+                )
 
         threading.Thread(target=recategorize_thread, daemon=True).start()
 
