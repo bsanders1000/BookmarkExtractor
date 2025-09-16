@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="3b596668-242f-4ab3-b8fe-93f7c7948251" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/bookmark_aggregator.log" beforeDir="false" />
+    <list default="true" id="3b596668-242f-4ab3-b8fe-93f7c7948251" name="Changes" comment="some stufff">
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/keyword_browser.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/keyword_browser.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main_window.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,7 +39,7 @@
     "Python.main_window.executor": "Debug",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "git-widget-placeholder": "pr-7",
+    "git-widget-placeholder": "#10 on pr-7",
     "ignore.virus.scanning.warn.message": "true",
     "run.code.analysis.last.selected.profile": "aDefault",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
@@ -115,9 +118,9 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Python.main_window" />
       <item itemvalue="Python.313" />
       <item itemvalue="Python.browser_aggregator" />
+      <item itemvalue="Python.main_window" />
     </list>
     <recent_temporary>
       <list>
