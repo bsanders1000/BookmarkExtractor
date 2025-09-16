@@ -20,10 +20,10 @@ class KeywordBrowserWidget(QWidget):
     
     bookmark_selected = pyqtSignal(object)  # Bookmark selected signal
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, bookmarks=None):
         super().__init__(parent)
-        self.bookmarks: List[Bookmark] = []
-        self.filtered_bookmarks: List[Bookmark] = []
+        self.bookmarks: List[Bookmark] = bookmarks or []
+        self.filtered_bookmarks: List[Bookmark] = self.bookmarks.copy()
         
         self.init_ui()
         

@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(cat_panel, "Categories")
 
         # Keyword browser tab (shows derived keywords)
-        self.keyword_browser = KeywordBrowserWidget(self.storage.get_all())
+        self.keyword_browser = KeywordBrowserWidget(parent=self, bookmarks=self.storage.get_all())
         self.tabs.addTab(self.keyword_browser, "Keywords")
 
         # Status bar
@@ -471,10 +471,7 @@ class MainWindow(QMainWindow):
                 if self.current_category:
                     self.populate_bookmark_list(self.current_category)
                 # Refresh keyword browser
-                self.keyword_browser.bookmarks = self.storage.get_all()
-                self.keyword_browser.keyword_to_bookmarks = self.keyword_browser._compute_keyword_map()
-                self.keyword_browser.keyword_list.clear()
-                self.keyword_browser._populate_keywords()
+                self.keyword_browser.set_bookmarks(self.storage.get_all())
                 self.status_bar.showMessage(
                     f"Imported {len(imported_bookmarks)} bookmarks successfully from {file_path}"
                 )
@@ -561,10 +558,7 @@ class MainWindow(QMainWindow):
     def _on_analysis_success(self, count: int):
         # Reload storage and refresh keyword browser
         self.storage.load()
-        self.keyword_browser.bookmarks = self.storage.get_all()
-        self.keyword_browser.keyword_to_bookmarks = self.keyword_browser._compute_keyword_map()
-        self.keyword_browser.keyword_list.clear()
-        self.keyword_browser._populate_keywords()
+        self.keyword_browser.set_bookmarks(self.storage.get_all())
         QMessageBox.information(self, "Done", f"Processed {count} bookmarks.")
         if getattr(self, "progress_dialog", None) and self.progress_dialog.value() < 100:
             self.progress_dialog.setValue(100)
@@ -583,7 +577,7 @@ class MainWindow(QMainWindow):
     # ------------------------- Settings -------------------------
 
     def show_settings_dialog(self):
-        dlg = SettingsDialog(self.settings_manager, self)
+        dlg = SettingsDialog(parent=self, settings_manager=self.settings_manager)
         dlg.exec_()
 
 

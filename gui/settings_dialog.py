@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class SettingsDialog(QDialog):
     """Settings configuration dialog"""
     
-    def __init__(self, settings_manager: SettingsManager, parent=None):
+    def __init__(self, parent=None, *, settings_manager: SettingsManager):
         super().__init__(parent)
         self.settings_manager = settings_manager
         self.setWindowTitle("Settings")
