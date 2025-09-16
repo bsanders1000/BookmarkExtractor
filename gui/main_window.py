@@ -118,7 +118,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(cat_panel, "Categories")
 
         # Keyword browser tab (shows derived keywords)
-        self.keyword_browser = KeywordBrowserWidget(self.storage.get_all())
+        self.keyword_browser = KeywordBrowserWidget(parent=self, bookmarks=self.storage.get_all())
+        # self.keyword_browser = KeywordBrowserWidget(self.storage.get_all())
         self.tabs.addTab(self.keyword_browser, "Keywords")
 
         # Status bar
