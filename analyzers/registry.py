@@ -16,9 +16,22 @@ class AnalyzerRegistry:
     def register(self, analyzer_class) -> None:
         """Register an analyzer class"""
         try:
-            # Create instance to get name
+            # Create instance to get a human-friendly name, with safe fallbacks
             instance = analyzer_class()
-            name = instance.get_name()
+            name = None
+            # Prefer an explicit get_name() method if available
+            if hasattr(instance, "get_name") and callable(getattr(instance, "get_name")):
+                try:
+                    name = instance.get_name()
+                except Exception:
+                    name = None
+            # Fallback to a class attribute 'name'
+            if not name:
+                name = getattr(instance, "name", None)
+            # Final fallback to class name
+            if not name:
+                name = analyzer_class.__name__
+
             self._analyzers[name] = analyzer_class
             logger.info(f"Registered analyzer: {name}")
         except Exception as e:
@@ -83,11 +96,26 @@ def list_analyzer_names(config: Optional[Dict[str, Any]] = None) -> List[str]:
 # Auto-register available analyzers
 def _auto_register():
     """Auto-register available analyzers"""
+    # Gemini (LLM) analyzer
     try:
         from analyzers.gemini_topic_analyzer import GeminiTopicAnalyzer
         register(GeminiTopicAnalyzer)
     except ImportError as e:
         logger.debug(f"Gemini analyzer not available: {e}")
+
+    # BERTopic single-document analyzer
+    try:
+        from analyzers.bertopic_single import BERTopicSingleDocAnalyzer
+        register(BERTopicSingleDocAnalyzer)
+    except ImportError as e:
+        logger.debug(f"BERTopic analyzer not available: {e}")
+
+    # LDA single-document analyzer
+    try:
+        from analyzers.lda_single import LDASingleDocAnalyzer
+        register(LDASingleDocAnalyzer)
+    except ImportError as e:
+        logger.debug(f"LDA analyzer not available: {e}")
 
 # Register analyzers on module import
 _auto_register()
