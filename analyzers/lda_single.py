@@ -6,6 +6,9 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 
 from analyzers.base import Analyzer, AnalysisResult
+from bookmark_extractor import Bookmark
+from credential_manager import CredentialManager  # type: ignore
+from fetcher import fetch_page_text
 
 
 def _simple_segments(text: str, min_chars: int = 200, max_chars: int = 1200) -> List[str]:
@@ -170,3 +173,84 @@ class LDASingleDocAnalyzer(Analyzer):
         from collections import Counter
         common = [t for t, _ in Counter(tokens).most_common(10)]
         return AnalysisResult(keywords=common[:5], topics=[])
+
+    # ---------- Pluggable analyzer interface used by AnalysisWorker ----------
+
+    def get_settings_schema(self) -> Dict[str, Any]:
+        return {
+            "min_text_length": {
+                "type": "integer",
+                "label": "Minimum Text Length",
+                "description": "Skip documents shorter than this many characters",
+                "default": 400,
+                "min": 50,
+                "max": 5000,
+            },
+            "max_words": {
+                "type": "integer",
+                "label": "Max Words to Fetch",
+                "description": "Limit words fetched from each page",
+                "default": 3000,
+                "min": 200,
+                "max": 20000,
+            },
+            "n_topics": {
+                "type": "integer",
+                "label": "LDA Topics",
+                "description": "Maximum number of topics",
+                "default": self.n_topics,
+                "min": 2,
+                "max": 20,
+            },
+            "top_n_words": {
+                "type": "integer",
+                "label": "Top Words per Topic",
+                "description": "How many words to keep per topic",
+                "default": self.top_n_words,
+                "min": 3,
+                "max": 20,
+            },
+        }
+
+    def analyze(
+        self,
+        bookmarks: List[Bookmark],
+        settings: Optional[Dict[str, Any]] = None,
+        cred_manager: Optional[CredentialManager] = None,
+    ) -> Dict[str, Any]:
+        settings = settings or {}
+
+        min_text_length = int(settings.get("min_text_length", 400))
+        max_words = int(settings.get("max_words", 3000))
+        # Allow overriding hyperparameters
+        self.n_topics = int(settings.get("n_topics", self.n_topics))
+        self.top_n_words = int(settings.get("top_n_words", self.top_n_words))
+
+        results = {"processed": 0, "skipped": 0, "errors": 0}
+
+        for bm in bookmarks:
+            try:
+                text = fetch_page_text(
+                    bm.url, timeout=15, max_words=max_words, sleep_between=0.0, user_agent="BookmarkTopicBot/1.0"
+                )
+                clean = (text or "").strip()
+                if not clean or len(clean) < min_text_length:
+                    fallback = self._fallback(clean or (bm.title or ""))
+                    bm.keywords = fallback.keywords
+                    bm.topics = []
+                    results["skipped"] += 1
+                    continue
+
+                analysis = self.extract(clean, title=bm.title)
+                topic_labels: List[str] = []
+                for t in analysis.topics:
+                    rep = t.get("representation") or []
+                    if isinstance(rep, list) and rep:
+                        topic_labels.append(" ".join(rep[:3]))
+                bm.topics = topic_labels[:3]
+                bm.keywords = analysis.keywords
+                results["processed"] += 1
+            except Exception:
+                results["errors"] += 1
+
+        return results

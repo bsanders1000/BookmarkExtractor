@@ -7,6 +7,10 @@ from bertopic import BERTopic
 from sklearn.feature_extraction.text import CountVectorizer
 from umap import UMAP
 
+from bookmark_extractor import Bookmark
+from credential_manager import CredentialManager  # type: ignore
+from fetcher import fetch_page_text
+
 from analyzers.base import Analyzer, AnalysisResult
 
 logger = logging.getLogger(__name__)
@@ -172,3 +176,107 @@ class BERTopicSingleDocAnalyzer(Analyzer):
         from collections import Counter
         common = [t for t, _ in Counter(tokens).most_common(10)] if tokens else []
         return AnalysisResult(keywords=common[:5], topics=[])
+
+    # ---------- Pluggable analyzer interface used by AnalysisWorker ----------
+
+    def get_settings_schema(self) -> Dict[str, Any]:
+        """Schema for GUI settings dialog."""
+        return {
+            "min_text_length": {
+                "type": "integer",
+                "label": "Minimum Text Length",
+                "description": "Skip documents shorter than this many characters",
+                "default": 400,
+                "min": 50,
+                "max": 5000,
+            },
+            "max_words": {
+                "type": "integer",
+                "label": "Max Words to Fetch",
+                "description": "Limit words fetched from each page",
+                "default": 3000,
+                "min": 200,
+                "max": 20000,
+            },
+            "batch_delay_sec": {
+                "type": "float",
+                "label": "Batch Delay (seconds)",
+                "description": "Delay between page fetches",
+                "default": 0.25,
+                "min": 0.0,
+                "max": 10.0,
+            },
+            "top_n_words": {
+                "type": "integer",
+                "label": "Top Words per Topic",
+                "description": "How many words to keep per topic",
+                "default": self.top_n_words,
+                "min": 3,
+                "max": 20,
+            },
+            "min_segments_for_bertopic": {
+                "type": "integer",
+                "label": "Min Segments for BERTopic",
+                "description": "Below this threshold, use frequency fallback",
+                "default": self.min_segments_for_bertopic,
+                "min": 2,
+                "max": 20,
+            },
+        }
+
+    def analyze(
+        self,
+        bookmarks: List[Bookmark],
+        settings: Optional[Dict[str, Any]] = None,
+        cred_manager: Optional[CredentialManager] = None,
+    ) -> Dict[str, Any]:
+        """Analyze a list of bookmarks, updating their topics/keywords in-place.
+
+        Returns a summary dict similar to the Gemini analyzer.
+        """
+        settings = settings or {}
+
+        min_text_length = int(settings.get("min_text_length", 400))
+        max_words = int(settings.get("max_words", 3000))
+        delay = float(settings.get("batch_delay_sec", 0.25))
+
+        # Allow overriding per-run hyperparameters from settings
+        self.top_n_words = int(settings.get("top_n_words", self.top_n_words))
+        self.min_segments_for_bertopic = int(
+            settings.get("min_segments_for_bertopic", self.min_segments_for_bertopic)
+        )
+
+        results = {"processed": 0, "skipped": 0, "errors": 0}
+
+        for bm in bookmarks:
+            try:
+                text = fetch_page_text(
+                    bm.url, timeout=15, max_words=max_words, sleep_between=delay, user_agent="BookmarkTopicBot/1.0"
+                )
+                clean = (text or "").strip()
+                if not clean or len(clean) < min_text_length:
+                    # Use fallback token frequency if page too small
+                    fallback = self._fallback(clean or (bm.title or ""))
+                    bm.keywords = fallback.keywords
+                    bm.topics = []
+                    results["skipped"] += 1
+                    continue
+
+                analysis = self.extract(clean, title=bm.title)
+
+                # Convert topic dicts -> human-readable labels for storage/UI
+                topic_labels: List[str] = []
+                for t in analysis.topics:
+                    rep = t.get("representation") or []
+                    if isinstance(rep, list) and rep:
+                        topic_labels.append(" ".join(rep[:3]))
+                # Keep up to 3 topic labels
+                bm.topics = topic_labels[:3]
+                bm.keywords = analysis.keywords
+                results["processed"] += 1
+
+            except Exception as e:
+                logger.error("BERTopic analysis error for %s: %s", bm.url, e)
+                results["errors"] += 1
+
+        return results
