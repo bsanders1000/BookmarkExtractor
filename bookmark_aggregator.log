@@ -25440,3 +25440,14 @@ AttributeError: 'BookmarkStorage' object has no attribute '_file_path'
 2025-09-12 18:29:17,488 - root - ERROR - HTTP error for https://decoredo.com/7891-45-best-garage-workbrench-that-needs-to-be-had-while-working/good-ideas-about-garage-workbench-no-7/#decoredo: 404 Client Error: Not Found for url: https://decoredo.com/7891-45-best-garage-workbrench-that-needs-to-be-had-while-working/good-ideas-about-garage-workbench-no-7/#decoredo
 2025-09-12 18:29:17,549 - bookmark_storage - INFO - Saved 332 bookmarks to C:\Users\brets\.bookmark_aggregator\bookmarks_processed.json
 2025-09-12 18:29:18,098 - bookmark_storage - INFO - Loaded 332 bookmarks from C:\Users\brets\.bookmark_aggregator\bookmarks_processed.json
+2025-09-16 15:20:22,336 - __main__ - INFO - Scanning for browser installations...
+2025-09-16 15:20:22,336 - __main__ - INFO - Found 2 browser installations
+2025-09-16 15:20:22,336 - __main__ - INFO - Extracting bookmarks from Google Chrome Unknown
+2025-09-16 15:20:22,336 - bookmark_extractor - INFO - Extracting bookmarks from Google Chrome
+2025-09-16 15:20:22,337 - bookmark_extractor - WARNING - No bookmarks file found for Google Chrome
+2025-09-16 15:20:22,337 - __main__ - INFO - Extracting bookmarks from Mozilla Firefox Unknown
+2025-09-16 15:20:22,337 - bookmark_extractor - INFO - Extracting bookmarks from Mozilla Firefox
+2025-09-16 15:20:22,337 - bookmark_extractor - INFO - Extracted 0 bookmarks from Firefox
+2025-09-16 15:20:22,337 - __main__ - INFO - Extracted 0 bookmarks in total
+2025-09-16 15:20:22,337 - __main__ - INFO - Categorizing bookmarks...
+2025-09-16 15:20:22,337 - bookmark_categorizer - INFO - Categorized 0 bookmarks into 12 categories
