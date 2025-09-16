@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
                     self, 
                     "Master Password", 
                     "Enter master password (or press OK to create one):", 
-                    QInputDialog.Password
+                    QLineEdit.Password
                 )
                 if not ok:
                     return
@@ -348,7 +348,7 @@ class MainWindow(QMainWindow):
                         self, 
                         f"Browser Credentials", 
                         f"Enter password for {browser.name}:", 
-                        QInputDialog.Password
+                        QLineEdit.Password
                     )
                     if not ok:
                         continue
