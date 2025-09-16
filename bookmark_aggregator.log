@@ -25440,3 +25440,4 @@ AttributeError: 'BookmarkStorage' object has no attribute '_file_path'
 2025-09-12 18:29:17,488 - root - ERROR - HTTP error for https://decoredo.com/7891-45-best-garage-workbrench-that-needs-to-be-had-while-working/good-ideas-about-garage-workbench-no-7/#decoredo: 404 Client Error: Not Found for url: https://decoredo.com/7891-45-best-garage-workbrench-that-needs-to-be-had-while-working/good-ideas-about-garage-workbench-no-7/#decoredo
 2025-09-12 18:29:17,549 - bookmark_storage - INFO - Saved 332 bookmarks to C:\Users\brets\.bookmark_aggregator\bookmarks_processed.json
 2025-09-12 18:29:18,098 - bookmark_storage - INFO - Loaded 332 bookmarks from C:\Users\brets\.bookmark_aggregator\bookmarks_processed.json
+2025-09-16 15:16:56,242 - __main__ - INFO - Launching GUI...
