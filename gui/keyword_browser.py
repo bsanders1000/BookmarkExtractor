@@ -3,7 +3,7 @@
 Keyword Browser Widget - Widget for browsing bookmark keywords and topics
 """
 import logging
-from typing import List, Dict
+from typing import List, Optional
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
@@ -20,9 +20,11 @@ class KeywordBrowserWidget(QWidget):
     
     bookmark_selected = pyqtSignal(object)  # Bookmark selected signal
     
-    def __init__(self, parent=None):
+    # def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None, bookmarks: Optional[List] = None):
         super().__init__(parent)
-        self.bookmarks: List[Bookmark] = []
+        # self.bookmarks: List[Bookmark] = []
+        self.bookmarks = bookmarks or []
         self.filtered_bookmarks: List[Bookmark] = []
         
         self.init_ui()

@@ -16,7 +16,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
 
-from bookmark_extractor import Bookmark
+from bookmark_extractor import Bookmark, extract_bookmarks
+from browser_detector import detect_browsers
+from bookmark_categorizer import categorize_bookmarks
 from credential_manager import CredentialManager
 from bookmark_storage import BookmarkStorage
 from gui.keyword_browser import KeywordBrowserWidget
@@ -116,7 +118,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(cat_panel, "Categories")
 
         # Keyword browser tab (shows derived keywords)
-        self.keyword_browser = KeywordBrowserWidget(self.storage.get_all())
+        self.keyword_browser = KeywordBrowserWidget(parent=self, bookmarks=self.storage.get_all())
+        # self.keyword_browser = KeywordBrowserWidget(self.storage.get_all())
         self.tabs.addTab(self.keyword_browser, "Keywords")
 
         # Status bar
@@ -147,6 +150,10 @@ class MainWindow(QMainWindow):
 
         # Tools menu
         tools_menu = menu_bar.addMenu("Tools")
+        extract_action = QAction("Extract Bookmarks...", self)
+        extract_action.triggered.connect(self.extract_bookmarks_from_browsers)
+        tools_menu.addAction(extract_action)
+        tools_menu.addSeparator()
         validate_action = QAction("Validate All Links", self)
         validate_action.triggered.connect(self.validate_all_links)
         tools_menu.addAction(validate_action)
@@ -297,6 +304,166 @@ class MainWindow(QMainWindow):
         menu.exec_(self.bookmark_list.mapToGlobal(position))
 
     # ------------------------- Actions -------------------------
+
+    def extract_bookmarks_from_browsers(self):
+        """Extract bookmarks from all detected browsers with GUI prompts"""
+        try:
+            # Step 1: Get master password for credential manager
+            if not self.cred_manager.initialized:
+                master_password, ok = QInputDialog.getText(
+                    self, 
+                    "Master Password", 
+                    "Enter master password (or press OK to create one):", 
+                    QInputDialog.Password
+                )
+                if not ok:
+                    return
+                
+                if not self.cred_manager.initialize(master_password):
+                    QMessageBox.critical(self, "Error", "Failed to initialize credential manager.")
+                    return
+            
+            # Step 2: Detect installed browsers
+            self.status_bar.showMessage("Detecting installed browsers...")
+            installed_browsers = detect_browsers()
+            
+            if not installed_browsers:
+                QMessageBox.information(self, "No Browsers", "No supported browsers found on this system.")
+                return
+            
+            logger.info(f"Found {len(installed_browsers)} browser installations")
+            
+            # Step 3: Prompt for missing credentials
+            for browser in installed_browsers:
+                if browser.requires_credentials and not self.cred_manager.has_credentials(browser.id):
+                    username, ok = QInputDialog.getText(
+                        self, 
+                        f"Browser Credentials", 
+                        f"Enter username for {browser.name}:"
+                    )
+                    if not ok:
+                        continue
+                    
+                    password, ok = QInputDialog.getText(
+                        self, 
+                        f"Browser Credentials", 
+                        f"Enter password for {browser.name}:", 
+                        QInputDialog.Password
+                    )
+                    if not ok:
+                        continue
+                    
+                    self.cred_manager.store_credentials(browser.id, username, password)
+            
+            # Step 4: Show progress dialog and extract in background thread
+            self.progress_dialog = QProgressDialog("Extracting bookmarks...", "Cancel", 0, len(installed_browsers), self)
+            self.progress_dialog.setWindowTitle("Extracting Bookmarks")
+            self.progress_dialog.setWindowModality(Qt.WindowModal)
+            self.progress_dialog.setAutoClose(False)
+            self.progress_dialog.setAutoReset(False)
+            self.progress_dialog.setMinimumDuration(0)
+            self.progress_dialog.show()
+            
+            # Extract bookmarks in background thread
+            def extraction_thread():
+                all_bookmarks = []
+                try:
+                    for i, browser in enumerate(installed_browsers):
+                        if self.progress_dialog.wasCanceled():
+                            break
+                        
+                        QTimer.singleShot(0, lambda b=browser, idx=i: self._update_extraction_progress(idx, f"Extracting from {b.name}..."))
+                        
+                        logger.info(f"Extracting bookmarks from {browser.name} {browser.version}")
+                        credentials = self.cred_manager.get_credentials(browser.id) if browser.requires_credentials else None
+                        bookmarks = extract_bookmarks(browser, credentials)
+                        all_bookmarks.extend(bookmarks)
+                        
+                        QTimer.singleShot(0, lambda idx=i+1: self._update_extraction_progress(idx, f"Extracted {len(all_bookmarks)} bookmarks..."))
+                    
+                    if not self.progress_dialog.wasCanceled() and all_bookmarks:
+                        # Step 5: Categorize bookmarks
+                        QTimer.singleShot(0, lambda: self._update_extraction_progress(len(installed_browsers), "Categorizing bookmarks..."))
+                        logger.info("Categorizing bookmarks...")
+                        categorized_bookmarks = categorize_bookmarks(all_bookmarks)
+                        
+                        # Step 6: Update storage and UI on main thread
+                        QTimer.singleShot(0, lambda: self._finish_extraction(categorized_bookmarks, all_bookmarks))
+                    else:
+                        QTimer.singleShot(0, lambda: self._close_progress_dialog())
+                        
+                except Exception as e:
+                    logger.error(f"Error during bookmark extraction: {e}")
+                    QTimer.singleShot(0, lambda: self._show_extraction_error(str(e)))
+            
+            threading.Thread(target=extraction_thread, daemon=True).start()
+            
+        except Exception as e:
+            logger.error(f"Error in extract_bookmarks_from_browsers: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to extract bookmarks: {e}")
+    
+    def _update_extraction_progress(self, value, message):
+        """Update progress dialog from main thread"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.setValue(value)
+            self.progress_dialog.setLabelText(message)
+            self.status_bar.showMessage(message)
+    
+    def _close_progress_dialog(self):
+        """Close progress dialog from main thread"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
+    
+    def _show_extraction_error(self, error_message):
+        """Show extraction error from main thread"""
+        self._close_progress_dialog()
+        QMessageBox.critical(self, "Extraction Error", f"Failed to extract bookmarks: {error_message}")
+    
+    def _finish_extraction(self, categorized_bookmarks, all_bookmarks):
+        """Finish extraction process and update UI from main thread"""
+        try:
+            self._close_progress_dialog()
+            
+            # Merge new bookmarks into existing categorized bookmarks
+            for category, bookmarks in categorized_bookmarks.items():
+                if category in self.categorized_bookmarks:
+                    # Avoid duplicates by checking URLs
+                    existing_urls = {b.url for b in self.categorized_bookmarks[category]}
+                    new_bookmarks = [b for b in bookmarks if b.url not in existing_urls]
+                    self.categorized_bookmarks[category].extend(new_bookmarks)
+                else:
+                    self.categorized_bookmarks[category] = bookmarks
+            
+            # Update storage
+            existing_urls = {b.url for b in self.storage.bookmarks}
+            new_bookmarks = [b for b in all_bookmarks if b.url not in existing_urls]
+            self.storage.bookmarks.extend(new_bookmarks)
+            self.storage.save()
+            
+            # Refresh UI
+            self.populate_category_tree()
+            if self.current_category and self.current_category in self.categorized_bookmarks:
+                self.populate_bookmark_list(self.current_category)
+            
+            # Refresh keyword browser tab
+            self.keyword_browser.bookmarks = self.storage.get_all()
+            self.keyword_browser.keyword_to_bookmarks = self.keyword_browser._compute_keyword_map()
+            self.keyword_browser.keyword_list.clear()
+            self.keyword_browser._populate_keywords()
+            
+            # Update status
+            total_new = len(new_bookmarks)
+            total_bookmarks = sum(len(bookmarks) for bookmarks in self.categorized_bookmarks.values())
+            self.status_bar.showMessage(f"Extraction complete. Added {total_new} new bookmarks. Total: {total_bookmarks}")
+            
+            if total_new > 0:
+                QMessageBox.information(self, "Extraction Complete", f"Successfully extracted {total_new} new bookmarks!")
+            else:
+                QMessageBox.information(self, "Extraction Complete", "No new bookmarks found (all bookmarks already exist).")
+                
+        except Exception as e:
+            logger.error(f"Error finishing extraction: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to complete extraction: {e}")
 
     def recategorize_bookmark(self, bookmark):
         dialog = QDialog(self)
