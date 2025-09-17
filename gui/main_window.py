@@ -22,6 +22,8 @@ from bookmark_categorizer import categorize_bookmarks
 from credential_manager import CredentialManager
 from bookmark_storage import BookmarkStorage
 from gui.keyword_browser import KeywordBrowserWidget
+from gui.topic_suggestion_tab import TopicSuggestionTab
+import subprocess
 from settings_manager import SettingsManager
 from gui.settings_dialog import SettingsDialog
 
@@ -174,6 +176,29 @@ class MainWindow(QMainWindow):
         analyze_action = QAction("Analyze Bookmarks…", self)
         analyze_action.triggered.connect(self.run_analysis)
         tools_menu.addAction(analyze_action)
+
+    # Topic suggestion pipeline
+    topic_suggest_action = QAction("Suggest Topics (Batch)", self)
+    topic_suggest_action.triggered.connect(self.run_topic_suggestion_pipeline)
+    tools_menu.addAction(topic_suggest_action)
+    def run_topic_suggestion_pipeline(self):
+        """Run the batch topic suggestion pipeline and show results in a new tab."""
+        self.status_bar.showMessage("Running topic suggestion pipeline...")
+        def worker():
+            try:
+                # Run the batch script
+                subprocess.run([sys.executable, "batch_topic_suggester.py"], check=True)
+                self.statusSig.emit("Topic suggestion complete. Displaying results...")
+                self.show_topic_suggestion_tab()
+            except Exception as e:
+                self.statusSig.emit(f"Topic suggestion failed: {e}")
+        threading.Thread(target=worker, daemon=True).start()
+
+    def show_topic_suggestion_tab(self):
+        """Display the topic suggestion results in a new tab."""
+        tab = TopicSuggestionTab(json_path="topic_candidates.json", parent=self)
+        self.tabs.addTab(tab, "Topic Suggestions")
+        self.tabs.setCurrentWidget(tab)
 
         # Help menu
         help_menu = menu_bar.addMenu("Help")
