@@ -69,6 +69,8 @@ class MainWindow(QMainWindow):
                 all_bookmarks.extend(blist)
             self.storage.bookmarks = all_bookmarks
             self.storage.save()
+            logger.info(f"Saved {len(self.storage.bookmarks)} bookmarks to {self.storage.path}")
+            QMessageBox.information(self, "Debug Save", f"Saved {len(self.storage.bookmarks)} bookmarks to {self.storage.path}")
 
         # Central widget and main layout
         central_widget = QWidget()
@@ -466,6 +468,7 @@ class MainWindow(QMainWindow):
     
     def _on_progress(self, value, message):
         """Update progress dialog and status bar from main thread"""
+        logger.info(f"Progress update: {value} - {message}")
         if hasattr(self, 'progress_dialog') and self.progress_dialog:
             self.progress_dialog.setValue(value)
             self.progress_dialog.setLabelText(message)
