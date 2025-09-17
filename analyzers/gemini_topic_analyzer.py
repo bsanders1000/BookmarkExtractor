@@ -337,7 +337,7 @@ class GeminiTopicAnalyzer:
     def _analyze_with_gemini(self, content: str, top_keywords: int, max_retries: int) -> Optional[Dict[str, Any]]:
         """Analyze content with Gemini API"""
         prompt = f"""
-        Analyze the following web page content and extract:
+        the following web page content was bookmarked by a user because thay had some interest in it. analyze the content and identify up to three main topics and the most relevant keywords.:
         1. Primary topic (main subject/theme)
         2. Secondary topics (2-3 related themes)
         3. Top {top_keywords} most relevant keywords
