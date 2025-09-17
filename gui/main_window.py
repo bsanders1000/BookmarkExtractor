@@ -209,7 +209,16 @@ class MainWindow(QMainWindow):
             self.topic_progress_dialog.close()
 
     def show_topic_suggestion_tab(self):
-        """Display the topic suggestion results in a new tab."""
+        """Display the topic suggestion results in a new tab and refresh categories/bookmarks."""
+        # Reload bookmarks from storage
+        self.storage.load()
+        # Re-categorize bookmarks
+        from bookmark_categorizer import categorize_bookmarks
+        self.categorized_bookmarks = categorize_bookmarks(self.storage.get_all())
+        self.populate_category_tree()
+        if self.current_category and self.current_category in self.categorized_bookmarks:
+            self.populate_bookmark_list(self.current_category)
+        # Show topic suggestion tab
         tab = TopicSuggestionTab(json_path="topic_candidates.json", parent=self)
         self.tabs.addTab(tab, "Topic Suggestions")
         self.tabs.setCurrentWidget(tab)
