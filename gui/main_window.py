@@ -177,10 +177,10 @@ class MainWindow(QMainWindow):
         analyze_action.triggered.connect(self.run_analysis)
         tools_menu.addAction(analyze_action)
 
-    # Topic suggestion pipeline
-    topic_suggest_action = QAction("Suggest Topics (Batch)", self)
-    topic_suggest_action.triggered.connect(self.run_topic_suggestion_pipeline)
-    tools_menu.addAction(topic_suggest_action)
+        # Topic suggestion pipeline
+        topic_suggest_action = QAction("Suggest Topics (Batch)", self)
+        topic_suggest_action.triggered.connect(self.run_topic_suggestion_pipeline)
+        tools_menu.addAction(topic_suggest_action)
     def run_topic_suggestion_pipeline(self):
         """Run the batch topic suggestion pipeline and show results in a new tab."""
         self.status_bar.showMessage("Running topic suggestion pipeline...")
@@ -199,34 +199,6 @@ class MainWindow(QMainWindow):
         tab = TopicSuggestionTab(json_path="topic_candidates.json", parent=self)
         self.tabs.addTab(tab, "Topic Suggestions")
         self.tabs.setCurrentWidget(tab)
-
-        # Help menu
-        help_menu = menu_bar.addMenu("Help")
-        about_action = QAction("About", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
-
-        # Settings Menu
-        settings_menu = self.menuBar().addMenu("Settings")
-        api_key_action = QAction("Set OpenAI API Key", self)
-        api_key_action.triggered.connect(self.show_settings_dialog)
-        settings_menu.addAction(api_key_action)
-
-        analyzer_settings_action = QAction("Analyzer Settings…", self)
-        analyzer_settings_action.triggered.connect(self.show_analyzer_settings_dialog)
-        settings_menu.addAction(analyzer_settings_action)
-        
-        # Threading safety: Initialize cancellation flag
-        self._cancel_extraction = False
-        
-        # Connect signals to slots for thread-safe GUI updates
-        self.progressSig.connect(self._on_progress)
-        self.statusSig.connect(self.status_bar.showMessage)
-        self.extractionDoneSig.connect(self._finish_extraction)
-        self.extractionErrSig.connect(self._show_extraction_error)
-        self.itemColorSig.connect(self._on_item_color)
-        self.validateProgressSig.connect(self._on_validate_progress)
-        self.recategorizeDoneSig.connect(self._on_recategorize_done)
 
     # ------------------------- Category / Bookmarks UI -------------------------
 
