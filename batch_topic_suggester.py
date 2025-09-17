@@ -1,6 +1,6 @@
 import json
 from bookmark_extractor import Bookmark, extract_bookmarks
-from analyzers.registry import get_default_analyzer
+from analyzers.registry import get_analyzer_by_name, list_analyzer_names
 from bookmark_categorizer import categorize_bookmarks
 from collections import defaultdict, Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -12,7 +12,11 @@ N_CLUSTERS = 12  # Coarse topics
 
 
 def extract_keywords(bookmarks):
-    analyzer = get_default_analyzer()
+    # Pick the first available analyzer as default
+    analyzer_names = list_analyzer_names()
+    if not analyzer_names:
+        raise RuntimeError("No analyzers available. Please check your analyzer setup.")
+    analyzer = get_analyzer_by_name(analyzer_names[0])
     results = []
     for bm in bookmarks:
         try:
