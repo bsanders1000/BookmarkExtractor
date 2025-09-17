@@ -184,15 +184,29 @@ class MainWindow(QMainWindow):
     def run_topic_suggestion_pipeline(self):
         """Run the batch topic suggestion pipeline and show results in a new tab."""
         self.status_bar.showMessage("Running topic suggestion pipeline...")
+        self.topic_progress_dialog = QProgressDialog("Extracting and analyzing bookmarks...", None, 0, 0, self)
+        self.topic_progress_dialog.setWindowTitle("Suggesting Topics")
+        self.topic_progress_dialog.setWindowModality(Qt.WindowModal)
+        self.topic_progress_dialog.setAutoClose(False)
+        self.topic_progress_dialog.setAutoReset(False)
+        self.topic_progress_dialog.setMinimumDuration(0)
+        self.topic_progress_dialog.show()
+
         def worker():
             try:
-                # Run the batch script
                 subprocess.run([sys.executable, "batch_topic_suggester.py"], check=True)
                 self.statusSig.emit("Topic suggestion complete. Displaying results...")
-                self.show_topic_suggestion_tab()
+                QTimer.singleShot(0, self.show_topic_suggestion_tab)
             except Exception as e:
                 self.statusSig.emit(f"Topic suggestion failed: {e}")
+            finally:
+                QTimer.singleShot(0, self._close_topic_progress_dialog)
+
         threading.Thread(target=worker, daemon=True).start()
+
+    def _close_topic_progress_dialog(self):
+        if hasattr(self, 'topic_progress_dialog') and self.topic_progress_dialog:
+            self.topic_progress_dialog.close()
 
     def show_topic_suggestion_tab(self):
         """Display the topic suggestion results in a new tab."""
