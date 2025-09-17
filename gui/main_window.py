@@ -62,15 +62,15 @@ class MainWindow(QMainWindow):
         # Bookmark storage
         self.storage = BookmarkStorage(Path.home() / ".bookmark_aggregator" / "bookmarks_processed.json")
         self.storage.load()
-        # On first run, sync extracted bookmarks into storage
-        if not self.storage.bookmarks:
+        # On first run, only sync provided categorized_bookmarks if non-empty
+        if not self.storage.bookmarks and categorized_bookmarks:
             all_bookmarks = []
             for blist in categorized_bookmarks.values():
                 all_bookmarks.extend(blist)
-            self.storage.bookmarks = all_bookmarks
-            self.storage.save()
-            logger.info(f"Saved {len(self.storage.bookmarks)} bookmarks to {self.storage.path}")
-            QMessageBox.information(self, "Debug Save", f"Saved {len(self.storage.bookmarks)} bookmarks to {self.storage.path}")
+            if all_bookmarks:
+                self.storage.bookmarks = all_bookmarks
+                self.storage.save()
+        logger.info(f"Saved {len(self.storage.bookmarks)} bookmarks to {self.storage.path}")
 
         # Central widget and main layout
         central_widget = QWidget()
@@ -142,6 +142,16 @@ class MainWindow(QMainWindow):
 
         # Menu bar
         self.create_menu_bar()
+
+        # Thread-safety: initialize flags and connect signals
+        self._cancel_extraction = False
+        self.progressSig.connect(self._on_progress)
+        self.statusSig.connect(self.status_bar.showMessage)
+        self.extractionDoneSig.connect(self._finish_extraction)
+        self.extractionErrSig.connect(self._show_extraction_error)
+        self.itemColorSig.connect(self._on_item_color)
+        self.validateProgressSig.connect(self._on_validate_progress)
+        self.recategorizeDoneSig.connect(self._on_recategorize_done)
 
     # ------------------------- Menu -------------------------
 
